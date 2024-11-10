@@ -1,7 +1,7 @@
-use std::{fs, str::FromStr};
+use std::{fs, ops, str::FromStr};
 
 use camino::Utf8PathBuf;
-use chrono::{DateTime, Local};
+use chrono::Local;
 use color_eyre::{eyre::Context, Result};
 use log::LevelFilter;
 use simplelog::{ColorChoice, ConfigBuilder, TermLogger, TerminalMode};
@@ -28,17 +28,11 @@ fn main() -> Result<()> {
         fs::create_dir(&output_dir)?;
     }
 
-    let height = 70;
-    let width = 70;
-    let path_amount = 10;
+    let size = vec2(70.0, 70.0);
 
-    let mut document = Document::new().set("viewBox", (0, 0, width, height));
-
-    let x_spacing = width / path_amount;
-
-    for index in 0..path_amount {
-        document = document.add(generate_path(index * x_spacing, height));
-    }
+    let document = Document::new()
+        .set("viewBox", (0.0, 0.0, size.x, size.y))
+        .add(hilbert_curve_path(size));
 
     let local_time = Local::now();
     let timestamp = local_time.format("%Y-%m-%d_%H-%M-%S");
@@ -50,16 +44,93 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn generate_path(x_start: i32, y_end: i32) -> Path {
-    let data = Data::new()
-        .move_to((x_start, 0))
-        .line_to((x_start, y_end / 2 - 10))
-        .line_to((x_start + 10, y_end / 2 + 10))
-        .line_to((x_start + 10, y_end));
+fn hilbert_curve_path(size: Vec2) -> Path {
+    let points = hilbert_curve(vec2(0.0, 0.0), vec2(size.x, 0.0), vec2(0.0, size.y), 3);
+
+    let mut data = Data::new();
+
+    for (index, point) in points.iter().enumerate() {
+        if index == 0 {
+            data = data.move_to((point.x, point.y));
+        } else {
+            data = data.line_to((point.x, point.y));
+        }
+    }
 
     Path::new()
         .set("fill", "none")
         .set("stroke", "black")
         .set("stroke-width", "1")
         .set("d", data)
+}
+
+/// Algorithm taken from https://www.fundza.com/algorithmic/space_filling/hilbert/basics/
+fn hilbert_curve(p: Vec2, x_vec: Vec2, y_vec: Vec2, n: usize) -> Vec<Vec2> {
+    let half_x = x_vec / 2.0;
+    let half_y = y_vec / 2.0;
+
+    if n == 0 {
+        vec![p + half_x + half_y]
+    } else {
+        let mut output = vec![];
+        output.append(&mut hilbert_curve(p, half_y, half_x, n - 1));
+        output.append(&mut hilbert_curve(p + half_x, half_x, half_y, n - 1));
+        output.append(&mut hilbert_curve(
+            p + half_x + half_y,
+            half_x,
+            half_y,
+            n - 1,
+        ));
+        output.append(&mut hilbert_curve(
+            p + half_x + y_vec,
+            -half_y,
+            -half_x,
+            n - 1,
+        ));
+
+        output
+    }
+}
+
+pub fn vec2(x: f32, y: f32) -> Vec2 {
+    Vec2 { x, y }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Vec2 {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl ops::Add for Vec2 {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Vec2 {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+
+impl ops::Div<f32> for Vec2 {
+    type Output = Self;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        Vec2 {
+            x: self.x / rhs,
+            y: self.y / rhs,
+        }
+    }
+}
+
+impl ops::Neg for Vec2 {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Vec2 {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
 }
