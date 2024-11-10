@@ -76,7 +76,7 @@ fn hilbert_curve_path(size: Vec2, iterations: usize) -> Path {
     Path::new()
         .set("fill", "none")
         .set("stroke", "black")
-        .set("stroke-width", "1")
+        .set("stroke-width", "0.1")
         .set("d", data)
 }
 
