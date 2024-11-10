@@ -1,15 +1,19 @@
-use std::{fs, num::NonZeroUsize, ops, str::FromStr};
+use std::{fs, str::FromStr};
 
 use camino::Utf8PathBuf;
 use chrono::Local;
 use clap::Parser;
 use color_eyre::{eyre::Context, Result};
-use log::LevelFilter;
+use itertools::Itertools;
+use log::{info, LevelFilter};
 use simplelog::{ColorChoice, ConfigBuilder, TermLogger, TerminalMode};
 use svg::{
     node::element::{path::Data, Path},
     Document,
 };
+use vec::{vec2, Vec2};
+
+mod vec;
 
 const OUTPUT_DIR: &str = "output";
 
@@ -26,7 +30,7 @@ fn main() -> Result<()> {
     TermLogger::init(
         LevelFilter::Info,
         ConfigBuilder::default()
-            .add_filter_allow("web_scraping".to_string())
+            .add_filter_allow("plotter_generator".to_string())
             .build(),
         TerminalMode::Mixed,
         ColorChoice::Auto,
@@ -41,9 +45,9 @@ fn main() -> Result<()> {
 
     let size = vec2(100.0, 100.0);
 
-    let document = Document::new()
-        .set("viewBox", (0.0, 0.0, size.x, size.y))
-        .add(hilbert_curve_path(size, args.iterations));
+    let mut document = Document::new().set("viewBox", (0.0, 0.0, size.x, size.y));
+
+    document = hilbert_curve_path(document, size, args.iterations);
 
     let local_time = Local::now();
     let timestamp = local_time.format("%Y-%m-%d_%H-%M-%S");
@@ -55,7 +59,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn hilbert_curve_path(size: Vec2, iterations: usize) -> Path {
+fn hilbert_curve_path(mut document: Document, size: Vec2, iterations: usize) -> Document {
     let points = hilbert_curve(
         vec2(0.0, 0.0),
         vec2(size.x, 0.0),
@@ -63,6 +67,32 @@ fn hilbert_curve_path(size: Vec2, iterations: usize) -> Path {
         iterations,
     );
 
+    document = document.add(points_to_path(&points));
+
+    let offset = 1.0;
+
+    let offset_points = offset_line(&points, offset);
+    document = document.add(points_to_path(&offset_points));
+
+    let offset_points = offset_line(&points, -offset);
+    document = document.add(points_to_path(&offset_points));
+
+    document
+}
+
+fn offset_line(points: &[Vec2], amount: f32) -> Vec<Vec2> {
+    let mut offset_points = vec![];
+
+    for (&a, &b, &c) in points.iter().tuple_windows() {
+        if let Some(direction) = direction_of_corner(a, b, c) {
+            offset_points.push(b + direction * amount);
+        }
+    }
+
+    offset_points
+}
+
+fn points_to_path(points: &[Vec2]) -> Path {
     let mut data = Data::new();
 
     for (index, point) in points.iter().enumerate() {
@@ -108,45 +138,39 @@ fn hilbert_curve(p: Vec2, x_vec: Vec2, y_vec: Vec2, n: usize) -> Vec<Vec2> {
     }
 }
 
-pub fn vec2(x: f32, y: f32) -> Vec2 {
-    Vec2 { x, y }
-}
+/// Returns a unit vector pointing inwards from the corner (the shortest angle).
+/// `b` is the "pointy bit" of the corner.
+///
+/// Returns `None` in the case of a straight line.
+pub fn direction_of_corner(a: Vec2, b: Vec2, c: Vec2) -> Option<Vec2> {
+    let ba = (a - b).normalize();
+    let bc = (c - b).normalize();
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vec2 {
-    pub x: f32,
-    pub y: f32,
-}
+    let dir = ba + bc;
 
-impl ops::Add for Vec2 {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Vec2 {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
-        }
+    if dir == Vec2::ZERO {
+        None
+    } else {
+        Some(dir.normalize())
     }
 }
 
-impl ops::Div<f32> for Vec2 {
-    type Output = Self;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
 
-    fn div(self, rhs: f32) -> Self::Output {
-        Vec2 {
-            x: self.x / rhs,
-            y: self.y / rhs,
-        }
+    #[test]
+    fn direction_of_corner_90_degrees() {
+        let direction = direction_of_corner(vec2(0.0, 0.0), vec2(10.0, 0.0), vec2(10.0, 5.0));
+
+        assert_eq!(direction, Some(vec2(-0.70710677, 0.70710677)));
     }
-}
 
-impl ops::Neg for Vec2 {
-    type Output = Self;
+    #[test]
+    fn direction_of_corner_180_degrees() {
+        let direction = direction_of_corner(vec2(0.0, 0.0), vec2(10.0, 0.0), vec2(20.0, 0.0));
 
-    fn neg(self) -> Self::Output {
-        Vec2 {
-            x: -self.x,
-            y: -self.y,
-        }
+        assert_eq!(direction, None);
     }
 }

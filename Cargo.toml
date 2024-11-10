@@ -13,3 +13,7 @@ simplelog = "0.12.2"
 color-eyre = "0.6.3"
 chrono = "0.4.38"
 clap = { version = "4.5.20", features = ["derive"] }
+itertools = "0.13.0"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"
