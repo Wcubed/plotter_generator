@@ -48,6 +48,10 @@ enum Commands {
         /// Amount of iterations on the hilbert curve.
         #[arg(short, long, default_value_t = 5)]
         iterations: usize,
+
+        /// Offset between the lines.
+        #[arg(short, long, default_value_t = 1.0)]
+        offset: f32,
     },
 }
 
@@ -77,8 +81,8 @@ fn main() -> Result<()> {
         Commands::WonkyHilbert { iterations, offset } => {
             document = wonky_triple_hilbert_curve(document, size, iterations, offset)
         }
-        Commands::Hilbert { iterations } => {
-            document = hilbert_curve_path(document, size, iterations)
+        Commands::Hilbert { iterations, offset } => {
+            document = hilbert_curve_path(document, size, iterations, offset)
         }
     }
 
@@ -131,7 +135,12 @@ fn wonky_offset_line(points: &[Vec2], amount: f32) -> Vec<Vec2> {
     offset_points
 }
 
-fn hilbert_curve_path(mut document: Document, size: Vec2, iterations: usize) -> Document {
+fn hilbert_curve_path(
+    mut document: Document,
+    size: Vec2,
+    iterations: usize,
+    offset: f32,
+) -> Document {
     let points = hilbert_curve(
         vec2(0.0, 0.0),
         vec2(size.x, 0.0),
@@ -141,10 +150,10 @@ fn hilbert_curve_path(mut document: Document, size: Vec2, iterations: usize) -> 
 
     document = document.add(points_to_path(&points));
 
-    let offset_points = offset_line(&points, 0.5);
+    let offset_points = offset_line(&points, offset);
     document = document.add(points_to_path(&offset_points));
 
-    let offset_points = offset_line(&points, -0.5);
+    let offset_points = offset_line(&points, -offset);
     document = document.add(points_to_path(&offset_points));
 
     document
@@ -154,20 +163,36 @@ fn hilbert_curve_path(mut document: Document, size: Vec2, iterations: usize) -> 
 fn offset_line(points: &[Vec2], offset: f32) -> Vec<Vec2> {
     let mut offset_points = vec![];
 
+    // Offset the first point.
+    if let (Some(&first), Some(&second)) = (points.first(), points.get(1)) {
+        let ghost = first - (second - first);
+        offset_points.push(offset_central_point(ghost, first, second, offset));
+    }
+
     for (&a, &b, &c) in points.iter().tuple_windows() {
-        let ab = (b - a).normalize();
-        let bc = (c - b).normalize();
+        offset_points.push(offset_central_point(a, b, c, offset));
+    }
 
-        let ab_90 = vec2(ab.y, -ab.x);
-        let bc_90 = vec2(bc.y, -bc.x);
-
-        let bisector = (ab_90 + bc_90).normalize();
-        let length = offset / ((1.0 + ab_90.x * bc_90.x + ab_90.y * bc_90.y) / 2.0).sqrt();
-
-        offset_points.push(b + bisector * length);
+    // Offset the last point.
+    if let (Some(&one_to_last), Some(&last)) = (points.get(points.len() - 2), points.last()) {
+        let ghost = last - (one_to_last - last);
+        offset_points.push(offset_central_point(one_to_last, last, ghost, offset));
     }
 
     offset_points
+}
+
+fn offset_central_point(a: Vec2, b: Vec2, c: Vec2, offset: f32) -> Vec2 {
+    let ab = (b - a).normalize();
+    let bc = (c - b).normalize();
+
+    let ab_90 = vec2(ab.y, -ab.x);
+    let bc_90 = vec2(bc.y, -bc.x);
+
+    let bisector = (ab_90 + bc_90).normalize();
+    let length = offset / ((1.0 + ab_90.x * bc_90.x + ab_90.y * bc_90.y) / 2.0).sqrt();
+
+    b + bisector * length
 }
 
 fn points_to_path(points: &[Vec2]) -> Path {
