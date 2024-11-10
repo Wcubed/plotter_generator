@@ -1,5 +1,7 @@
 [package]
 name = "plotter_generator"
+authors = ["Wybe Westra"]
+description = "Generates svg files for use with a plotter or 3d-printer-turned-plotter"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,3 +12,4 @@ log = "0.4.22"
 simplelog = "0.12.2"
 color-eyre = "0.6.3"
 chrono = "0.4.38"
+clap = { version = "4.5.20", features = ["derive"] }

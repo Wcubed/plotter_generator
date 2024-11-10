@@ -1,7 +1,8 @@
-use std::{fs, ops, str::FromStr};
+use std::{fs, num::NonZeroUsize, ops, str::FromStr};
 
 use camino::Utf8PathBuf;
 use chrono::Local;
+use clap::Parser;
 use color_eyre::{eyre::Context, Result};
 use log::LevelFilter;
 use simplelog::{ColorChoice, ConfigBuilder, TermLogger, TerminalMode};
@@ -11,6 +12,14 @@ use svg::{
 };
 
 const OUTPUT_DIR: &str = "output";
+
+#[derive(Debug, Parser)]
+#[command(version, about)]
+struct Args {
+    /// Amount of iterations on the hilbert curve.
+    #[arg(short, default_value_t = 5)]
+    iterations: usize,
+}
 
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -23,29 +32,36 @@ fn main() -> Result<()> {
         ColorChoice::Auto,
     )?;
 
+    let args = Args::parse();
+
     let output_dir = Utf8PathBuf::from_str(OUTPUT_DIR)?;
     if !output_dir.exists() {
         fs::create_dir(&output_dir)?;
     }
 
-    let size = vec2(70.0, 70.0);
+    let size = vec2(100.0, 100.0);
 
     let document = Document::new()
         .set("viewBox", (0.0, 0.0, size.x, size.y))
-        .add(hilbert_curve_path(size));
+        .add(hilbert_curve_path(size, args.iterations));
 
     let local_time = Local::now();
     let timestamp = local_time.format("%Y-%m-%d_%H-%M-%S");
 
-    let output_file = output_dir.join(format!("test_{}.svg", timestamp));
+    let output_file = output_dir.join(format!("output_{}.svg", timestamp));
     svg::save(&output_file, &document)
         .wrap_err_with(|| format!("Could not save as `{output_file}`"))?;
 
     Ok(())
 }
 
-fn hilbert_curve_path(size: Vec2) -> Path {
-    let points = hilbert_curve(vec2(0.0, 0.0), vec2(size.x, 0.0), vec2(0.0, size.y), 3);
+fn hilbert_curve_path(size: Vec2, iterations: usize) -> Path {
+    let points = hilbert_curve(
+        vec2(0.0, 0.0),
+        vec2(size.x, 0.0),
+        vec2(0.0, size.y),
+        iterations,
+    );
 
     let mut data = Data::new();
 
