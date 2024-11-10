@@ -5,7 +5,7 @@ use chrono::Local;
 use clap::{Parser, Subcommand};
 use color_eyre::{eyre::Context, Result};
 use itertools::Itertools;
-use log::{info, LevelFilter};
+use log::LevelFilter;
 use simplelog::{ColorChoice, ConfigBuilder, TermLogger, TerminalMode};
 use svg::{
     node::element::{path::Data, Path},
@@ -33,6 +33,7 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Hilbert curve with 2 wonky offset lines.
     WonkyHilbert {
         /// Amount of iterations on the hilbert curve.
         #[arg(short, long, default_value_t = 5)]
@@ -41,6 +42,12 @@ enum Commands {
         /// Offset of the wonky lines.
         #[arg(short, long, default_value_t = 1.0)]
         offset: f32,
+    },
+    /// Hilbert curve.
+    Hilbert {
+        /// Amount of iterations on the hilbert curve.
+        #[arg(short, long, default_value_t = 5)]
+        iterations: usize,
     },
 }
 
@@ -69,6 +76,9 @@ fn main() -> Result<()> {
     match args.command {
         Commands::WonkyHilbert { iterations, offset } => {
             document = wonky_triple_hilbert_curve(document, size, iterations, offset)
+        }
+        Commands::Hilbert { iterations } => {
+            document = hilbert_curve_path(document, size, iterations)
         }
     }
 
@@ -116,6 +126,45 @@ fn wonky_offset_line(points: &[Vec2], amount: f32) -> Vec<Vec2> {
         if let Some(direction) = direction_of_corner(a, b, c) {
             offset_points.push(b + direction * amount);
         }
+    }
+
+    offset_points
+}
+
+fn hilbert_curve_path(mut document: Document, size: Vec2, iterations: usize) -> Document {
+    let points = hilbert_curve(
+        vec2(0.0, 0.0),
+        vec2(size.x, 0.0),
+        vec2(0.0, size.y),
+        iterations,
+    );
+
+    document = document.add(points_to_path(&points));
+
+    let offset_points = offset_line(&points, 0.5);
+    document = document.add(points_to_path(&offset_points));
+
+    let offset_points = offset_line(&points, -0.5);
+    document = document.add(points_to_path(&offset_points));
+
+    document
+}
+
+/// Algorithm taken from https://stackoverflow.com/questions/68104969/offset-a-parallel-line-to-a-given-line-python
+fn offset_line(points: &[Vec2], offset: f32) -> Vec<Vec2> {
+    let mut offset_points = vec![];
+
+    for (&a, &b, &c) in points.iter().tuple_windows() {
+        let ab = (b - a).normalize();
+        let bc = (c - b).normalize();
+
+        let ab_90 = vec2(ab.y, -ab.x);
+        let bc_90 = vec2(bc.y, -bc.x);
+
+        let bisector = (ab_90 + bc_90).normalize();
+        let length = offset / ((1.0 + ab_90.x * bc_90.x + ab_90.y * bc_90.y) / 2.0).sqrt();
+
+        offset_points.push(b + bisector * length);
     }
 
     offset_points
