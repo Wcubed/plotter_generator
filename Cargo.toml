@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+svg = "0.18.0"
+camino = "1.1.9"
+log = "0.4.22"
+simplelog = "0.12.2"
+color-eyre = "0.6.3"
