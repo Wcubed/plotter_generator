@@ -49,6 +49,10 @@ enum Commands {
         #[arg(short, long, default_value_t = 5)]
         iterations: usize,
 
+        /// How many paralel lines to draw.
+        #[arg(short, long, default_value_t = 3)]
+        lines: usize,
+
         /// Offset between the lines.
         #[arg(short, long, default_value_t = 1.0)]
         offset: f32,
@@ -81,9 +85,11 @@ fn main() -> Result<()> {
         Commands::WonkyHilbert { iterations, offset } => {
             document = wonky_triple_hilbert_curve(document, size, iterations, offset)
         }
-        Commands::Hilbert { iterations, offset } => {
-            document = hilbert_curve_path(document, size, iterations, offset)
-        }
+        Commands::Hilbert {
+            iterations,
+            lines,
+            offset,
+        } => document = parallel_hilbert_curves(document, size, iterations, lines, offset),
     }
 
     let local_time = Local::now();
@@ -135,12 +141,18 @@ fn wonky_offset_line(points: &[Vec2], amount: f32) -> Vec<Vec2> {
     offset_points
 }
 
-fn hilbert_curve_path(
+fn parallel_hilbert_curves(
     mut document: Document,
     size: Vec2,
     iterations: usize,
+    lines: usize,
     offset: f32,
 ) -> Document {
+    if lines == 0 {
+        // No lines to draw.
+        return document;
+    }
+
     let points = hilbert_curve(
         vec2(0.0, 0.0),
         vec2(size.x, 0.0),
@@ -148,13 +160,24 @@ fn hilbert_curve_path(
         iterations,
     );
 
-    document = document.add(points_to_path(&points));
+    let start_offset = if lines % 2 == 0 {
+        // Even number of lines. This means we shouldn't use the original curve.
+        offset / 2.0
+    } else {
+        // Uneven number of lines: the original curve is included.
+        document = document.add(points_to_path(&points));
+        offset
+    };
 
-    let offset_points = offset_line(&points, offset);
-    document = document.add(points_to_path(&offset_points));
+    for index in 0..(lines / 2) {
+        let line_offset: f32 = start_offset + offset * (index as f32);
 
-    let offset_points = offset_line(&points, -offset);
-    document = document.add(points_to_path(&offset_points));
+        let offset_points = offset_line(&points, line_offset);
+        document = document.add(points_to_path(&offset_points));
+
+        let offset_points = offset_line(&points, -line_offset);
+        document = document.add(points_to_path(&offset_points));
+    }
 
     document
 }
