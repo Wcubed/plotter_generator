@@ -2,7 +2,7 @@ use std::{fs, str::FromStr};
 
 use camino::Utf8PathBuf;
 use chrono::Local;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use color_eyre::{eyre::Context, Result};
 use itertools::Itertools;
 use log::{info, LevelFilter};
@@ -17,12 +17,31 @@ mod vec;
 
 const OUTPUT_DIR: &str = "output";
 
-#[derive(Debug, Parser)]
+#[derive(Parser, Debug)]
 #[command(version, about)]
 struct Args {
-    /// Amount of iterations on the hilbert curve.
-    #[arg(short, default_value_t = 5)]
-    iterations: usize,
+    /// Width of the canvas.
+    #[arg(short, long, default_value_t = 100.0)]
+    width: f32,
+    /// Height of the canvas.
+    #[arg(short = 'H', long, default_value_t = 100.0)]
+    height: f32,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    WonkyHilbert {
+        /// Amount of iterations on the hilbert curve.
+        #[arg(short, long, default_value_t = 5)]
+        iterations: usize,
+
+        /// Offset of the wonky lines.
+        #[arg(short, long, default_value_t = 1.0)]
+        offset: f32,
+    },
 }
 
 fn main() -> Result<()> {
@@ -43,11 +62,15 @@ fn main() -> Result<()> {
         fs::create_dir(&output_dir)?;
     }
 
-    let size = vec2(100.0, 100.0);
+    let size = vec2(args.width, args.height);
 
     let mut document = Document::new().set("viewBox", (0.0, 0.0, size.x, size.y));
 
-    document = hilbert_curve_path(document, size, args.iterations);
+    match args.command {
+        Commands::WonkyHilbert { iterations, offset } => {
+            document = wonky_triple_hilbert_curve(document, size, iterations, offset)
+        }
+    }
 
     let local_time = Local::now();
     let timestamp = local_time.format("%Y-%m-%d_%H-%M-%S");
@@ -59,7 +82,12 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn hilbert_curve_path(mut document: Document, size: Vec2, iterations: usize) -> Document {
+fn wonky_triple_hilbert_curve(
+    mut document: Document,
+    size: Vec2,
+    iterations: usize,
+    offset: f32,
+) -> Document {
     let points = hilbert_curve(
         vec2(0.0, 0.0),
         vec2(size.x, 0.0),
@@ -69,18 +97,19 @@ fn hilbert_curve_path(mut document: Document, size: Vec2, iterations: usize) -> 
 
     document = document.add(points_to_path(&points));
 
-    let offset = 1.0;
-
-    let offset_points = offset_line(&points, offset);
+    let offset_points = wonky_offset_line(&points, offset);
     document = document.add(points_to_path(&offset_points));
 
-    let offset_points = offset_line(&points, -offset);
+    let offset_points = wonky_offset_line(&points, -offset);
     document = document.add(points_to_path(&offset_points));
 
     document
 }
 
-fn offset_line(points: &[Vec2], amount: f32) -> Vec<Vec2> {
+/// Creates a new line based on the original by calculating the points "inside"
+/// the corners, and following that. Will cross over the original line if
+/// the corners change direction.
+fn wonky_offset_line(points: &[Vec2], amount: f32) -> Vec<Vec2> {
     let mut offset_points = vec![];
 
     for (&a, &b, &c) in points.iter().tuple_windows() {
